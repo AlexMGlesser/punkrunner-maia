@@ -363,6 +363,25 @@ input[type='color'].input { padding: 2px; height: 30px; cursor: pointer; }
 .waiting-list li { border: 1px solid var(--line2); padding: 6px 12px; background: var(--panel); }
 .waiting-list li.me { border-color: var(--red); color: #fff; }
 
+/* ---------- Feed cut (hidden) ---------- */
+.feedcut {
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.03) 0 2px, transparent 2px 4px),
+    radial-gradient(circle at center, #1a0408, #020102 70%);
+}
+.feedcut .waiting-title { color: #6b0f1f; text-shadow: 0 0 12px rgba(255, 31, 69, 0.3); animation: flicker 3s steps(1) infinite; }
+@keyframes flicker { 0%, 100% { opacity: 1; } 47% { opacity: 0.4; } 48% { opacity: 1; } 73% { opacity: 0.6; } }
+
+/* ---------- Crew panel ---------- */
+.crew-row { display: grid; grid-template-columns: 1fr 1.25fr; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px dashed var(--line); }
+.crew-row:last-of-type { border-bottom: none; margin-bottom: 6px; }
+.crew-name { display: flex; flex-direction: column; min-width: 0; }
+.crew-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.crew-name small { color: var(--muted); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
+.crew-row.override .crew-name small { color: var(--orange); }
+.crew-row select.input { padding: 4px 6px; font-size: 12px; }
+#crewPanel .section { background: rgba(255, 31, 69, 0.04); }
+
 /* ---------- Inspector ---------- */
 .inspector {
   width: 280px;

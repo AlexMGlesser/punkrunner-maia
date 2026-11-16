@@ -61,7 +61,7 @@
       </div>
 
       <div class="host-only view-ctrl">
-        <span class="chip-label">PLAYER VIEW</span>
+        <span class="chip-label">GROUP VIEW</span>
         <select id="viewSelect" class="input"></select>
       </div>
 
@@ -106,10 +106,19 @@
             <ul id="waitingList" class="waiting-list"></ul>
           </div>
         </div>
+        <div id="feedcut" class="waiting feedcut hidden">
+          <div class="waiting-inner">
+            <div class="waiting-title glitch" data-text="FEED CUT">FEED CUT</div>
+            <p class="waiting-sub">Your host has cut your feed. Stay sharp.</p>
+          </div>
+        </div>
         <div class="statusbar"><span id="cursorCell">--</span><span id="toolHint"></span></div>
       </div>
 
-      <aside id="inspector" class="inspector host-only"></aside>
+      <aside id="inspector" class="inspector host-only">
+        <div id="crewPanel"></div>
+        <div id="inspectorBody"></div>
+      </aside>
     </main>
   </section>
 

@@ -53,7 +53,9 @@ network address (10.x, 172.16–31.x, 192.168.x, link-local). Players must be on
 - **Host**: import images as scenes (button or drag-and-drop), switch scenes via the tabs, move/scale the grid
   (Grid tool + panel), place enemies (yellow circles) and cameras (rectangles), draw colored boxes, draw patrol paths and set speeds,
   toggle alert (orange cone, 1.5× range), turn a camera's sight cone off, shrink/grow all units with *Unit size*, and save scenes to the library for future sessions.
-  The *Player view* dropdown keeps players in the waiting room or shows them a scene.
+  The *Group view* dropdown puts all players in the waiting room or on a scene. The *Crew* panel overrides
+  that per player: give someone their own scene (split the crew across scenes), or cut their feed to hide the view.
+  Scene tabs show how many players are watching each one.
 - **Everyone** can run/pause the simulation.
 
 Keys (host): `V` select · `E` enemy · `C` camera · `B` box · `P` path · `G` grid · `H` pan · `F` fit · `A` alert · `Del` delete.

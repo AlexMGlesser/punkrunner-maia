@@ -44,9 +44,21 @@ const state = {
   players: [],
   scenes: [], // host only
   currentId: null, // host: scene being edited
-  view: { mode: 'waiting', sceneId: null },
+  view: { mode: 'waiting', sceneId: null }, // group view (host)
+  assignments: {}, // host: playerKey → own view
   playerScene: null, // player: scene currently shown
 };
+// Per-tab player id so the host's view assignments survive reconnects/refreshes.
+const playerKey = (() => {
+  try {
+    let k = sessionStorage.getItem('pr.pkey');
+    if (!k) sessionStorage.setItem('pr.pkey', (k = `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`));
+    return k;
+  } catch {
+    return `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+})();
+
 const clock = { paused: true, time: 0, at: performance.now() };
 const simTime = () => (clock.paused ? clock.time : clock.time + (performance.now() - clock.at) / 1000);
 
@@ -152,7 +164,7 @@ async function resumeHost() {
 async function joinSession() {
   const code = joinCode.value.trim().toUpperCase();
   if (code.length < 5) return menuError('Enter the 5-character code');
-  const res = await emit('player:join', { code, name: state.name });
+  const res = await emit('player:join', { code, name: state.name, key: playerKey });
   if (res.error) return menuError(res.error);
   store.set('pr.lastCode', code);
   enterPlayer(res.state);
@@ -187,6 +199,7 @@ function enterHost(s) {
   state.players = s.players;
   state.scenes = s.scenes;
   state.view = s.view;
+  state.assignments = s.assignments || {};
   if (!state.scenes.find((x) => x.id === state.currentId)) state.currentId = state.scenes[0]?.id ?? null;
   document.body.classList.remove('player');
   map.editable = true;
@@ -194,6 +207,7 @@ function enterHost(s) {
   applyClock(s.sim);
   selectScene(state.currentId);
   renderPlayers();
+  renderCrew();
   setTool('select');
 }
 
@@ -259,7 +273,7 @@ socket.on('connect', async () => {
     enterHost(res.state);
     toast('Reconnected');
   } else {
-    const res = await emit('player:join', { code: state.code, name: state.name });
+    const res = await emit('player:join', { code: state.code, name: state.name, key: playerKey });
     if (res.error) {
       toast('Session ended.', 5000);
       return leaveSessionSilently();
@@ -279,13 +293,17 @@ function leaveSessionSilently() {
 socket.on('players', (players) => {
   state.players = players;
   renderPlayers();
+  renderCrew();
+  renderSceneTabs();
 });
 socket.on('sim', applyClock);
 socket.on('view', (view) => state.role === 'player' && applyPlayerView(view));
-socket.on('view:host', (view) => {
+socket.on('view:host', ({ view, assignments }) => {
   state.view = view;
+  state.assignments = assignments || {};
   renderSceneTabs();
   renderViewSelect();
+  renderCrew();
   renderInspector();
 });
 socket.on('scene:live', (scene) => {
@@ -309,10 +327,64 @@ function renderPlayers() {
 }
 
 function applyPlayerView(view) {
-  const waiting = view.mode !== 'scene' || !view.scene;
-  $('#waiting').classList.toggle('hidden', !waiting);
-  state.playerScene = waiting ? null : view.scene;
+  const showing = view.mode === 'scene' && view.scene;
+  $('#waiting').classList.toggle('hidden', !!showing || view.mode === 'hidden');
+  $('#feedcut').classList.toggle('hidden', view.mode !== 'hidden');
+  state.playerScene = showing ? view.scene : null;
   map.setScene(state.playerScene);
+}
+
+// ---------------------------------------------------------------------------
+// Views: group view (top bar) + per-player overrides (Crew panel)
+// ---------------------------------------------------------------------------
+const viewToValue = (v) => (v?.mode === 'scene' ? `scene:${v.sceneId}` : v?.mode || 'waiting');
+const valueToView = (val) => (val.startsWith('scene:') ? { mode: 'scene', sceneId: val.slice(6) } : { mode: val });
+const effectiveView = (p) => state.assignments[p.key] || state.view;
+const sceneName = (id) => state.scenes.find((s) => s.id === id)?.name || '?';
+function describeView(v) {
+  if (v.mode === 'scene') return `▶ ${sceneName(v.sceneId)}`;
+  return v.mode === 'hidden' ? '✕ Feed cut' : '⏸ Waiting room';
+}
+function viewOptions() {
+  return (
+    '<option value="waiting">⏸ Waiting room</option><option value="hidden">✕ Feed cut (hidden)</option>' +
+    state.scenes.map((s) => `<option value="scene:${s.id}">▶ ${esc(s.name)}</option>`).join('')
+  );
+}
+
+/** target omitted → group view; target = player key → that player only ('follow' clears the override). */
+function setPlayerView(value, target) {
+  flushSync();
+  socket.emit('view:set', { ...(value === 'follow' ? { mode: 'follow' } : valueToView(value)), target });
+}
+
+function renderCrew() {
+  const el = $('#crewPanel');
+  if (state.role !== 'host' || !el) return;
+  if (!state.players.length) {
+    el.innerHTML = `<div class="section"><h3>Crew <span class="tag">0 CONNECTED</span></h3>
+      <p class="muted">Players who join with code <b>${esc(state.code)}</b> show up here.</p></div>`;
+    return;
+  }
+  const rows = state.players
+    .map((p) => {
+      const own = state.assignments[p.key];
+      return `<div class="crew-row ${own ? 'override' : ''}">
+        <div class="crew-name"><span>${esc(p.name)}</span><small>${own ? 'own view' : 'follows group'}</small></div>
+        <select class="input" data-crew="${esc(p.key)}">
+          <option value="follow">↳ Group: ${esc(describeView(state.view))}</option>
+          ${viewOptions()}
+        </select></div>`;
+    })
+    .join('');
+  el.innerHTML = `<div class="section"><h3>Crew <span class="tag">${state.players.length} CONNECTED</span></h3>
+    ${rows}
+    <div class="btn-row"><button class="btn small" data-act="crewreset" ${Object.keys(state.assignments).length ? '' : 'disabled'}>Everyone follow group</button></div>
+    <p class="muted">Give a player their own view to split the crew across scenes, or cut their feed.</p></div>`;
+  for (const sel of $$('[data-crew]', el)) {
+    const own = state.assignments[sel.dataset.crew];
+    sel.value = own ? viewToValue(own) : 'follow';
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -351,9 +423,15 @@ function renderSceneTabs() {
   }
   list.innerHTML = state.scenes
     .map((s) => {
-      const live = state.view.mode === 'scene' && state.view.sceneId === s.id;
-      return `<div class="scene-tab ${s.id === state.currentId ? 'active' : ''}" data-id="${s.id}" title="${esc(s.name)}">
-        ${live ? '<span class="live">LIVE</span>' : ''}<span class="name">${esc(s.name)}</span>
+      const watching = state.players.filter((p) => {
+        const v = effectiveView(p);
+        return v.mode === 'scene' && v.sceneId === s.id;
+      });
+      const groupLive = state.view.mode === 'scene' && state.view.sceneId === s.id;
+      const live = watching.length || groupLive;
+      const tip = watching.length ? ` — viewing: ${watching.map((p) => p.name).join(', ')}` : '';
+      return `<div class="scene-tab ${s.id === state.currentId ? 'active' : ''}" data-id="${s.id}" title="${esc(s.name + tip)}">
+        ${live ? `<span class="live">LIVE ${watching.length}</span>` : ''}<span class="name">${esc(s.name)}</span>
         <span class="x" data-del="${s.id}" title="Remove from session">✕</span></div>`;
     })
     .join('');
@@ -380,17 +458,10 @@ function deleteScene(id) {
 
 function renderViewSelect() {
   const sel = $('#viewSelect');
-  sel.innerHTML =
-    '<option value="__waiting">⏸ Waiting room</option>' +
-    state.scenes.map((s) => `<option value="${s.id}">▶ ${esc(s.name)}</option>`).join('');
-  sel.value = state.view.mode === 'scene' ? state.view.sceneId : '__waiting';
+  sel.innerHTML = viewOptions();
+  sel.value = viewToValue(state.view);
 }
 $('#viewSelect').addEventListener('change', (e) => setPlayerView(e.target.value));
-function setPlayerView(value) {
-  flushSync();
-  if (value === '__waiting') socket.emit('view:set', { mode: 'waiting' });
-  else socket.emit('view:set', { mode: 'scene', sceneId: value });
-}
 
 // Import images
 const fileInput = $('#fileInput');
@@ -556,6 +627,7 @@ window.addEventListener('keydown', (e) => {
 // Host: inspector
 // ---------------------------------------------------------------------------
 const inspector = $('#inspector');
+const inspectorBody = $('#inspectorBody');
 
 const BOX_COLORS = [
   '#ff1f45', '#ff8a00', '#ffd400', '#39ff14', '#2af5ff', '#2d6bff',
@@ -578,10 +650,10 @@ function renderInspector() {
   if (state.role !== 'host') return;
   const s = currentScene();
   if (!s) {
-    inspector.innerHTML = `<div class="section"><h3>No scene</h3><p class="muted">Import an image to start building a scene.</p></div>${helpSection()}`;
+    inspectorBody.innerHTML = `<div class="section"><h3>No scene</h3><p class="muted">Import an image to start building a scene.</p></div>${helpSection()}`;
     return;
   }
-  const live = state.view.mode === 'scene' && state.view.sceneId === s.id;
+  const live = state.view.mode === 'scene' && state.view.sceneId === s.id; // group view
   const sel = map.getSelected();
   const kind = map.selected?.kind;
 
@@ -590,7 +662,7 @@ function renderInspector() {
     <h3>Scene ${s.libraryId ? '<span class="tag">IN LIBRARY</span>' : '<span class="tag">UNSAVED</span>'}</h3>
     <div class="row"><label>Name</label><input class="input" data-obj="scene" data-field="name" maxlength="64" /></div>
     <div class="btn-row">
-      ${live ? '<button class="btn small" data-act="waiting">Send players to waiting room</button>' : '<button class="btn small primary" data-act="show">Show to players</button>'}
+      ${live ? '<button class="btn small" data-act="waiting">Send group to waiting room</button>' : '<button class="btn small primary" data-act="show">Show to group</button>'}
     </div>
     <div class="btn-row">
       <button class="btn small" data-act="save">${s.libraryId ? 'Update library' : 'Save to library'}</button>
@@ -684,7 +756,7 @@ function renderInspector() {
 
   html += `<div class="section"><div class="btn-row"><button class="btn small danger" data-act="delscene">Remove scene from session</button></div></div>`;
   html += helpSection();
-  inspector.innerHTML = html;
+  inspectorBody.innerHTML = html;
   refreshInspectorValues(true);
 }
 
@@ -762,6 +834,7 @@ inspector.addEventListener('input', (e) => {
   queueSync(currentScene());
 });
 inspector.addEventListener('change', (e) => {
+  if (e.target.dataset.crew) return setPlayerView(e.target.value, e.target.dataset.crew);
   if (e.target.dataset.field === 'pathMode' || e.target.dataset.field === 'speed') renderInspector();
 });
 
@@ -776,10 +849,13 @@ inspector.addEventListener('click', async (e) => {
   };
   switch (btn.dataset.act) {
     case 'show':
-      setPlayerView(s.id);
+      setPlayerView(`scene:${s.id}`);
       break;
     case 'waiting':
-      setPlayerView('__waiting');
+      setPlayerView('waiting');
+      break;
+    case 'crewreset':
+      for (const key of Object.keys(state.assignments)) setPlayerView('follow', key);
       break;
     case 'save':
       await saveToLibrary();

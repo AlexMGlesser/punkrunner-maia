@@ -129,15 +129,32 @@ function simPayload(session) {
 }
 
 function playerList(session) {
-  return [...session.players.values()].map((p) => ({ id: p.id, name: p.name }));
+  return [...session.players.values()].map((p) => ({ id: p.id, key: p.key, name: p.name }));
 }
 
-function playerView(session) {
-  const v = session.view;
+// Views: { mode: 'waiting' | 'hidden' | 'scene', sceneId }.
+// session.view is the group view; session.assignments (playerKey → view) overrides it per player.
+function normalizeView(session, { mode, sceneId } = {}) {
+  if (mode === 'scene' && session.scenes.has(sceneId)) return { mode: 'scene', sceneId };
+  if (mode === 'hidden') return { mode: 'hidden', sceneId: null };
+  return { mode: 'waiting', sceneId: null };
+}
+
+function effectiveView(session, player) {
+  return (player && session.assignments.get(player.key)) || session.view;
+}
+
+/** What a player's client receives: the scene itself is included when they're viewing one. */
+function playerViewPayload(session, player) {
+  const v = effectiveView(session, player);
   if (v.mode === 'scene' && session.scenes.has(v.sceneId)) {
     return { mode: 'scene', scene: session.scenes.get(v.sceneId) };
   }
-  return { mode: 'waiting' };
+  return { mode: v.mode === 'hidden' ? 'hidden' : 'waiting' };
+}
+
+function hostViews(session) {
+  return { view: session.view, assignments: Object.fromEntries(session.assignments) };
 }
 
 function hostState(session) {
@@ -146,17 +163,17 @@ function hostState(session) {
     hostName: session.hostName,
     players: playerList(session),
     scenes: session.sceneOrder.map((id) => session.scenes.get(id)),
-    view: session.view,
+    ...hostViews(session),
     sim: simPayload(session),
   };
 }
 
-function playerState(session) {
+function playerState(session, player) {
   return {
     code: session.code,
     hostName: session.hostName,
     players: playerList(session),
-    view: playerView(session),
+    view: playerViewPayload(session, player),
     sim: simPayload(session),
   };
 }
@@ -165,8 +182,8 @@ function broadcastPlayers(session) {
   io.to(session.code).emit('players', playerList(session));
 }
 function broadcastView(session) {
-  io.to(`${session.code}:players`).emit('view', playerView(session));
-  io.to(`${session.code}:host`).emit('view:host', session.view);
+  for (const p of session.players.values()) io.to(p.id).emit('view', playerViewPayload(session, p));
+  io.to(`${session.code}:host`).emit('view:host', hostViews(session));
 }
 function broadcastSim(session) {
   io.to(session.code).emit('sim', simPayload(session));
@@ -299,6 +316,7 @@ io.on('connection', (socket) => {
       scenes: new Map(),
       sceneOrder: [],
       view: { mode: 'waiting', sceneId: null },
+      assignments: new Map(), // playerKey → view override
       sim: { paused: true, time: 0, startedAt: Date.now() },
     };
     sessions.set(code, session);
@@ -313,16 +331,19 @@ io.on('connection', (socket) => {
     attachHost(session, ack);
   });
 
-  socket.on('player:join', ({ code, name } = {}, ack) => {
+  socket.on('player:join', ({ code, name, key } = {}, ack) => {
     const session = sessions.get(String(code || '').trim().toUpperCase());
     if (!session) return fail(ack, 'No session with that code');
     leave();
-    session.players.set(socket.id, { id: socket.id, name: cleanName(name) });
+    // The key is a per-tab id from the client so view assignments survive reconnects.
+    const pkey = /^[a-zA-Z0-9-]{8,64}$/.test(key) ? key : newId();
+    const player = { id: socket.id, key: pkey, name: cleanName(name) };
+    session.players.set(socket.id, player);
     ctx = { session, role: 'player' };
     socket.join(session.code);
     socket.join(`${session.code}:players`);
     broadcastPlayers(session);
-    ack({ ok: true, state: playerState(session) });
+    ack({ ok: true, state: playerState(session, player) });
   });
 
   socket.on('session:leave', () => leave());
@@ -367,8 +388,9 @@ io.on('connection', (socket) => {
     if (!session.scenes.has(scene.id)) return;
     const clean = sanitizeScene(scene);
     session.scenes.set(clean.id, clean);
-    if (session.view.mode === 'scene' && session.view.sceneId === clean.id) {
-      io.to(`${session.code}:players`).emit('scene:live', clean);
+    for (const p of session.players.values()) {
+      const v = effectiveView(session, p);
+      if (v.mode === 'scene' && v.sceneId === clean.id) io.to(p.id).emit('scene:live', clean);
     }
   });
 
@@ -377,17 +399,32 @@ io.on('connection', (socket) => {
     const { session } = ctx;
     session.scenes.delete(id);
     session.sceneOrder = session.sceneOrder.filter((s) => s !== id);
+    let affected = false;
     if (session.view.sceneId === id) {
       session.view = { mode: 'waiting', sceneId: null };
-      broadcastView(session);
+      affected = true;
     }
+    for (const [k, v] of session.assignments) {
+      if (v.sceneId === id) {
+        session.assignments.set(k, { mode: 'waiting', sceneId: null });
+        affected = true;
+      }
+    }
+    if (affected) broadcastView(session);
   });
 
-  socket.on('view:set', ({ mode, sceneId } = {}) => {
+  // target omitted → set the group view; target = playerKey → override that player
+  // (mode 'follow' clears the override so they follow the group view again).
+  socket.on('view:set', ({ mode, sceneId, target } = {}) => {
     if (!isHost()) return;
     const { session } = ctx;
-    session.view =
-      mode === 'scene' && session.scenes.has(sceneId) ? { mode: 'scene', sceneId } : { mode: 'waiting', sceneId: null };
+    if (target) {
+      const key = String(target);
+      if (mode === 'follow') session.assignments.delete(key);
+      else session.assignments.set(key, normalizeView(session, { mode, sceneId }));
+    } else {
+      session.view = normalizeView(session, { mode, sceneId });
+    }
     broadcastView(session);
   });
 
