@@ -13,6 +13,17 @@ A LAN tactical-map app: the host builds scenes (map image + grid + enemies + cam
 
 Keep the black window open while playing; closing it shuts the session down.
 
+### Or download from the command line
+PowerShell:
+```powershell
+Invoke-WebRequest https://github.com/AlexMGlesser/punkrunner-maia/releases/latest/download/PunkRunner.exe -OutFile PunkRunner.exe; .\PunkRunner.exe
+```
+Command Prompt (curl ships with Windows 10/11):
+```bat
+curl -L -o PunkRunner.exe https://github.com/AlexMGlesser/punkrunner-maia/releases/latest/download/PunkRunner.exe && PunkRunner.exe
+```
+Both download the latest exe into the current folder and start it.
+
 ## Run from source (development)
 ```
 npm install
