@@ -12,6 +12,8 @@ const COLORS = {
 let uid = 0;
 export const newId = () => `${Date.now().toString(36)}${(uid++).toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 
+const LIST_KEY = { enemy: 'enemies', camera: 'cameras', box: 'boxes' };
+
 const imageCache = new Map();
 function loadImage(url) {
   if (!imageCache.has(url)) {
@@ -38,7 +40,9 @@ export class MapView {
     this.panX = 0;
     this.panY = 0;
     this.tool = 'select';
-    this.selected = null; // { kind: 'enemy'|'camera', id }
+    this.selected = null; // { kind: 'enemy'|'camera'|'box', id }
+    this.boxColor = '#ff1f45'; // color used for newly drawn boxes
+    this.draft = null; // box being drawn
     this.snap = true;
     this.showPaths = true;
     this.drag = null;
@@ -85,14 +89,14 @@ export class MapView {
 
   getSelected() {
     if (!this.selected || !this.scene) return null;
-    const list = this.selected.kind === 'enemy' ? this.scene.enemies : this.scene.cameras;
+    const list = this.scene[LIST_KEY[this.selected.kind]] || [];
     return list.find((u) => u.id === this.selected.id) || null;
   }
 
   deleteSelected() {
     const u = this.getSelected();
     if (!u) return;
-    const key = this.selected.kind === 'enemy' ? 'enemies' : 'cameras';
+    const key = LIST_KEY[this.selected.kind];
     this.scene[key] = this.scene[key].filter((x) => x !== u);
     this.select(null);
     this.onChange();
@@ -135,6 +139,16 @@ export class MapView {
   // ------------------------------------------------------------------ coords
   toWorld(sx, sy) {
     return { x: (sx - this.panX) / this.zoom, y: (sy - this.panY) / this.zoom };
+  }
+
+  /** Snap to the nearest grid line intersection (used for box corners). */
+  snapCorner(p) {
+    if (!this.snap) return { x: p.x, y: p.y };
+    const { gx, gy, size } = this.gridInfo();
+    return {
+      x: gx + Math.round((p.x - gx) / size) * size,
+      y: gy + Math.round((p.y - gy) / size) * size,
+    };
   }
 
   snapPoint(p) {
@@ -208,7 +222,16 @@ export class MapView {
     switch (this.tool) {
       case 'select': {
         const sel = this.getSelected();
-        if (sel) {
+        if (sel && this.selected.kind === 'box') {
+          // corner resize handles
+          const corners = boxCorners(sel);
+          for (let i = 0; i < 4; i++) {
+            if (dist(w, corners[i]) < 9 / this.zoom) {
+              this.drag = { type: 'resize', unit: sel, corner: i, orig: { ...sel } };
+              return;
+            }
+          }
+        } else if (sel) {
           // rotate handle
           const h = this._rotateHandle(sel, t);
           if (h && dist(w, h) < 9 / this.zoom) {
@@ -231,6 +254,7 @@ export class MapView {
           this.select({ kind: hit.kind, id: hit.unit.id });
           this.drag = {
             type: 'move',
+            kind: hit.kind,
             unit: hit.unit,
             start: w,
             orig: { x: hit.unit.x, y: hit.unit.y, path: (hit.unit.path || []).map((p) => ({ ...p })) },
@@ -299,6 +323,12 @@ export class MapView {
         this.drag = { type: 'grid', start: w, orig: { x: s.grid.x, y: s.grid.y } };
         break;
       }
+      case 'box': {
+        const p = this.snapCorner(w);
+        this.drag = { type: 'drawbox', start: p };
+        this.draft = { x: p.x, y: p.y, w: 0, h: 0 };
+        break;
+      }
     }
   }
 
@@ -322,7 +352,8 @@ export class MapView {
         if (!d.moved && Math.hypot(dx, dy) * this.zoom < 3) return;
         d.moved = true;
         if (this.snap) {
-          const target = this.snapPoint({ x: d.orig.x + dx, y: d.orig.y + dy });
+          const snapFn = d.kind === 'box' ? 'snapCorner' : 'snapPoint';
+          const target = this[snapFn]({ x: d.orig.x + dx, y: d.orig.y + dy });
           dx = target.x - d.orig.x;
           dy = target.y - d.orig.y;
         }
@@ -357,11 +388,34 @@ export class MapView {
         this.onChange('grid');
         break;
       }
+      case 'drawbox':
+        this.draft = normRect(d.start, this.snapCorner(w));
+        break;
+      case 'resize': {
+        // the corner opposite the dragged one stays fixed
+        const fixed = boxCorners(d.orig)[(d.corner + 2) % 4];
+        const r = normRect(fixed, this.snapCorner(w));
+        if (r.w < 2 || r.h < 2) return;
+        Object.assign(d.unit, r);
+        this.onChange();
+        break;
+      }
     }
   }
 
   _onUp(e) {
     if (this.canvas.hasPointerCapture?.(e.pointerId)) this.canvas.releasePointerCapture(e.pointerId);
+    if (this.drag?.type === 'drawbox' && this.draft) {
+      const r = this.draft;
+      if (r.w * this.zoom >= 4 && r.h * this.zoom >= 4) {
+        const box = { id: newId(), label: '', ...r, color: this.boxColor, opacity: 0.35 };
+        this.scene.boxes = this.scene.boxes || [];
+        this.scene.boxes.push(box);
+        this.select({ kind: 'box', id: box.id });
+        this.onChange();
+      }
+      this.draft = null;
+    }
     this.drag = null;
     this._updateCursor();
   }
@@ -371,7 +425,7 @@ export class MapView {
     if (this.drag?.type === 'pan') cur = 'grabbing';
     else if (this.spaceDown || this.tool === 'pan' || !this.editable) cur = 'grab';
     else if (this.tool === 'grid') cur = 'move';
-    else if (['enemy', 'camera', 'path'].includes(this.tool)) cur = 'crosshair';
+    else if (['enemy', 'camera', 'path', 'box'].includes(this.tool)) cur = 'crosshair';
     this.canvas.style.cursor = cur;
   }
 
@@ -404,6 +458,12 @@ export class MapView {
     for (let i = s.enemies.length - 1; i >= 0; i--) {
       const p = enemyPose(s.enemies[i], t, s.grid.size);
       if (dist(w, p) < r) return { kind: 'enemy', unit: s.enemies[i] };
+    }
+    // boxes sit underneath units, so they're tested last
+    const boxes = s.boxes || [];
+    for (let i = boxes.length - 1; i >= 0; i--) {
+      const b = boxes[i];
+      if (w.x >= b.x && w.x <= b.x + b.w && w.y >= b.y && w.y <= b.y + b.h) return { kind: 'box', unit: b };
     }
     return null;
   }
@@ -452,6 +512,9 @@ export class MapView {
     }
 
     this._drawGrid();
+
+    for (const b of s.boxes || []) this._drawBox(b);
+    if (this.draft) this._drawBox({ ...this.draft, color: this.boxColor, opacity: 0.25, label: '' }, true);
 
     if (this.editable && this.showPaths) this._drawPaths(t);
 
@@ -626,10 +689,43 @@ export class MapView {
     }
   }
 
+  _drawBox(b, isDraft = false) {
+    const { ctx, zoom: z } = this;
+    const rgb = hexToRgb(b.color);
+    const op = Number.isFinite(b.opacity) ? b.opacity : 0.35;
+    ctx.fillStyle = `rgba(${rgb},${op})`;
+    ctx.fillRect(b.x, b.y, b.w, b.h);
+    ctx.lineWidth = 2 / z;
+    ctx.strokeStyle = `rgba(${rgb},${Math.min(1, op + 0.5)})`;
+    if (isDraft) ctx.setLineDash([5 / z, 4 / z]);
+    ctx.strokeRect(b.x, b.y, b.w, b.h);
+    ctx.setLineDash([]);
+    if (b.label) {
+      const px = Math.max(Math.min(b.h * 0.35, b.w / Math.max(3, b.label.length) * 1.6), 11 / z);
+      this._text(b.label, b.x + b.w / 2, b.y + b.h / 2, '#fff', px);
+    }
+  }
+
   _drawSelection(t) {
     const { ctx, zoom: z } = this;
     const u = this.getSelected();
-    if (u) {
+    if (u && this.selected.kind === 'box') {
+      ctx.setLineDash([4 / z, 3 / z]);
+      ctx.lineWidth = 2 / z;
+      ctx.strokeStyle = '#fff';
+      ctx.strokeRect(u.x - 3 / z, u.y - 3 / z, u.w + 6 / z, u.h + 6 / z);
+      ctx.setLineDash([]);
+      if (this.tool === 'select') {
+        for (const c of boxCorners(u)) {
+          const hs = 5 / z;
+          ctx.fillStyle = '#ff1f45';
+          ctx.fillRect(c.x - hs, c.y - hs, hs * 2, hs * 2);
+          ctx.lineWidth = 1.5 / z;
+          ctx.strokeStyle = '#fff';
+          ctx.strokeRect(c.x - hs, c.y - hs, hs * 2, hs * 2);
+        }
+      }
+    } else if (u) {
       const pose = this._pose(u, t);
       const r = this._unitRadius() * (this.selected.kind === 'camera' ? 1.4 : 1) + 6 / z;
       ctx.beginPath();
@@ -806,6 +902,24 @@ export class MapView {
   }
 }
 
+/** Corners clockwise from top-left: TL, TR, BR, BL (opposite corner = (i + 2) % 4). */
+function boxCorners(b) {
+  return [
+    { x: b.x, y: b.y },
+    { x: b.x + b.w, y: b.y },
+    { x: b.x + b.w, y: b.y + b.h },
+    { x: b.x, y: b.y + b.h },
+  ];
+}
+function normRect(a, b) {
+  return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y) };
+}
+function hexToRgb(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+  const n = m ? parseInt(m[1], 16) : 0xff1f45;
+  return `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
+}
+
 function dist(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
@@ -814,5 +928,7 @@ function normDeg(d) {
 }
 export function isTyping(e) {
   const t = e.target;
-  return t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+  if (!t) return false;
+  if (t.tagName === 'INPUT') return ['text', 'number', 'search', 'email', 'url', 'password', ''].includes(t.type);
+  return t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable;
 }

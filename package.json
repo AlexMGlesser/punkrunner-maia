@@ -1,6 +1,6 @@
 {
   "name": "punkrunner-maia",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Cyberpunk tactical map & session app",
   "main": "server.js",
   "type": "commonjs",

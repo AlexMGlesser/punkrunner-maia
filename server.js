@@ -228,6 +228,16 @@ function sanitizeScene(s) {
       pathMode: e.pathMode === 'pingpong' ? 'pingpong' : 'loop',
       path: pts(e.path),
     })),
+    boxes: (Array.isArray(s.boxes) ? s.boxes.slice(0, 1000) : []).map((b) => ({
+      id: str(b.id),
+      label: str(b.label),
+      x: num(b.x),
+      y: num(b.y),
+      w: Math.max(1, num(b.w, 1)),
+      h: Math.max(1, num(b.h, 1)),
+      color: /^#[0-9a-f]{6}$/i.test(b.color) ? b.color : '#ff1f45',
+      opacity: Math.min(1, Math.max(0, num(b.opacity, 0.35))),
+    })),
     cameras: (Array.isArray(s.cameras) ? s.cameras.slice(0, 500) : []).map((c) => ({
       id: str(c.id),
       label: str(c.label),
@@ -343,6 +353,7 @@ io.on('connection', (socket) => {
       grid: { x: 0, y: 0, size: Math.round(Math.max(w, h) / 24), opacity: 0.18 },
       enemies: [],
       cameras: [],
+      boxes: [],
     });
     const { session } = ctx;
     session.scenes.set(scene.id, scene);

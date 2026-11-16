@@ -51,10 +51,10 @@ network address (10.x, 172.16–31.x, 192.168.x, link-local). Players must be on
 ## Using it
 - **Menu**: *Name* sets your handle · *Create* starts a session and shows a 5-character code · *Join* enters a code.
 - **Host**: import images as scenes (button or drag-and-drop), switch scenes via the tabs, move/scale the grid
-  (Grid tool + panel), place enemies (yellow circles) and cameras (rectangles), draw patrol paths and set speeds,
-  toggle alert (orange cone, 1.5× range), and save scenes to the library for future sessions.
+  (Grid tool + panel), place enemies (yellow circles) and cameras (rectangles), draw colored boxes, draw patrol paths and set speeds,
+  toggle alert (orange cone, 1.5× range), turn a camera's sight cone off, shrink/grow all units with *Unit size*, and save scenes to the library for future sessions.
   The *Player view* dropdown keeps players in the waiting room or shows them a scene.
 - **Everyone** can run/pause the simulation.
 
-Keys (host): `V` select · `E` enemy · `C` camera · `P` path · `G` grid · `H` pan · `F` fit · `A` alert · `Del` delete.
+Keys (host): `V` select · `E` enemy · `C` camera · `B` box · `P` path · `G` grid · `H` pan · `F` fit · `A` alert · `Del` delete.
 Right-drag or Space+drag pans, the mouse wheel zooms.

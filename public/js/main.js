@@ -511,12 +511,15 @@ const TOOL_HINTS = {
   select: 'Click to select · drag to move · drag the red handle to rotate · right-drag to pan · wheel to zoom',
   enemy: 'Click to place an enemy',
   camera: 'Click to place a camera',
+  box: 'Drag to draw a box · pick a color in the panel · in Select, drag corners to resize',
   path: 'Select an enemy, then click to add waypoints · Backspace removes last · Esc to finish',
   grid: 'Drag to move the grid · adjust cell size in the panel',
   pan: 'Drag to pan · wheel to zoom',
 };
 function setTool(tool) {
   map.setTool(tool);
+  // The box panel's swatches recolor the selected box, so start new boxes with nothing selected.
+  if (tool === 'box' && map.selected) map.select(null);
   $$('.tool[data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === tool));
   $('#toolHint').textContent = state.role === 'host' ? TOOL_HINTS[tool] || '' : 'Drag to pan · wheel to zoom';
   renderInspector();
@@ -528,7 +531,7 @@ window.addEventListener('keydown', (e) => {
   if (isTyping(e) || !state.role || e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key === 'f' || e.key === 'F') return map.fit();
   if (state.role !== 'host' || !libraryModal.classList.contains('hidden')) return;
-  const keyTools = { v: 'select', e: 'enemy', c: 'camera', p: 'path', g: 'grid', h: 'pan' };
+  const keyTools = { v: 'select', e: 'enemy', c: 'camera', b: 'box', p: 'path', g: 'grid', h: 'pan' };
   const k = e.key.toLowerCase();
   if (keyTools[k]) return setTool(keyTools[k]);
   const sel = map.getSelected();
@@ -542,7 +545,7 @@ window.addEventListener('keydown', (e) => {
   } else if ((e.key === 'Delete' || e.key === 'Backspace') && sel) {
     e.preventDefault();
     map.deleteSelected();
-  } else if (k === 'a' && sel) {
+  } else if (k === 'a' && sel && map.selected.kind !== 'box') {
     sel.alerted = !sel.alerted;
     map.onChange();
     renderInspector();
@@ -553,6 +556,16 @@ window.addEventListener('keydown', (e) => {
 // Host: inspector
 // ---------------------------------------------------------------------------
 const inspector = $('#inspector');
+
+const BOX_COLORS = [
+  '#ff1f45', '#ff8a00', '#ffd400', '#39ff14', '#2af5ff', '#2d6bff',
+  '#b14dff', '#ff4fd8', '#ffffff', '#808080', '#000000', '#8b5a2b',
+];
+function swatches(current) {
+  return `<div class="swatches">${BOX_COLORS.map(
+    (c) => `<button class="swatch ${c === current?.toLowerCase() ? 'active' : ''}" style="background:${c}" data-act="color" data-color="${c}" title="${c}"></button>`,
+  ).join('')}</div>`;
+}
 
 function slider(obj, field, label, min, max, step, unit = '') {
   return `<div class="row"><label>${label}</label><div class="pair">
@@ -637,11 +650,30 @@ function renderInspector() {
       ${slider('unit', 'sweepSpeed', 'Sweep spd', 1, 180, 1, 'degrees / second')}
     </div>
     <div class="section"><div class="btn-row"><button class="btn small danger" data-act="delete">Delete camera</button></div></div>`;
+  } else if (sel && kind === 'box') {
+    html += `
+    <div class="section">
+      <h3>Box <span class="tag" data-boxsize>${boxSizeText(sel, s)}</span></h3>
+      <div class="row"><label>Label</label><input class="input" data-obj="unit" data-field="label" maxlength="20" placeholder="optional" /></div>
+      ${swatches(sel.color)}
+      <div class="row"><label>Custom</label><input type="color" class="input" data-obj="unit" data-field="color" /></div>
+      ${slider('unit', 'opacity', 'Fill', 0, 1, 0.05, 'fill opacity')}
+      <p class="muted">Drag to move · drag the corner squares to resize.</p>
+    </div>
+    <div class="section"><div class="btn-row"><button class="btn small danger" data-act="delete">Delete box</button></div></div>`;
+  } else if (map.tool === 'box') {
+    html += `
+    <div class="section">
+      <h3>New box color</h3>
+      ${swatches(map.boxColor)}
+      <div class="row"><label>Custom</label><input type="color" class="input" data-opt="boxcolor" value="${map.boxColor}" /></div>
+      <p class="muted">Drag on the map to draw a box.</p>
+    </div>`;
   } else {
     html += `
     <div class="section">
       <h3>Units</h3>
-      <p class="muted">${s.enemies.length} enemies · ${s.cameras.length} cameras<br>${s.enemies.filter((e) => e.alerted).length + s.cameras.filter((c) => c.alerted).length} alerted</p>
+      <p class="muted">${s.enemies.length} enemies · ${s.cameras.length} cameras · ${(s.boxes || []).length} boxes<br>${s.enemies.filter((e) => e.alerted).length + s.cameras.filter((c) => c.alerted).length} alerted</p>
       <div class="btn-row">
         <button class="btn small warn" data-act="alertall" ${s.enemies.length + s.cameras.length ? '' : 'disabled'}>Alert all</button>
         <button class="btn small" data-act="calmall" ${s.enemies.length + s.cameras.length ? '' : 'disabled'}>Calm all</button>
@@ -659,7 +691,7 @@ function renderInspector() {
 function helpSection() {
   return `<div class="section"><h3>Keys</h3><p class="muted">
     <span class="kbd">V</span> select <span class="kbd">E</span> enemy <span class="kbd">C</span> camera<br>
-    <span class="kbd">P</span> path <span class="kbd">G</span> grid <span class="kbd">H</span> pan <span class="kbd">F</span> fit<br>
+    <span class="kbd">B</span> box <span class="kbd">P</span> path <span class="kbd">G</span> grid <span class="kbd">H</span> pan <span class="kbd">F</span> fit<br>
     <span class="kbd">A</span> toggle alert · <span class="kbd">Del</span> delete<br>
     Right-drag or <span class="kbd">Space</span>+drag to pan · wheel to zoom · <span class="kbd">Shift</span> while rotating snaps 15°</p></div>`;
 }
@@ -673,8 +705,16 @@ function targetFor(obj) {
   return null;
 }
 
+function boxSizeText(box, scene) {
+  const cells = (v) => (v / scene.grid.size).toFixed(1).replace(/\.0$/, '');
+  return `${cells(box.w)} × ${cells(box.h)} CELLS`;
+}
+
 function refreshInspectorValues(force = false) {
   if (state.role !== 'host') return;
+  const sizeTag = $('[data-boxsize]', inspector);
+  const selBox = map.selected?.kind === 'box' ? map.getSelected() : null;
+  if (sizeTag && selBox) sizeTag.textContent = boxSizeText(selBox, currentScene());
   for (const el of $$('[data-obj]', inspector)) {
     if (!force && el === document.activeElement) continue;
     const t = targetFor(el.dataset.obj);
@@ -692,7 +732,16 @@ inspector.addEventListener('input', (e) => {
   const el = e.target;
   if (el.dataset.opt === 'snap') return (map.snap = el.checked);
   if (el.dataset.opt === 'paths') return (map.showPaths = el.checked);
+  if (el.dataset.opt === 'boxcolor') {
+    map.boxColor = el.value;
+    $$('.swatch', inspector).forEach((sw) => sw.classList.toggle('active', sw.dataset.color === el.value));
+    return;
+  }
   if (!el.dataset.obj) return;
+  if (el.dataset.field === 'color') {
+    map.boxColor = el.value;
+    $$('.swatch', inspector).forEach((sw) => sw.classList.toggle('active', sw.dataset.color === el.value));
+  }
   const t = targetFor(el.dataset.obj);
   if (!t) return;
   const f = el.dataset.field;
@@ -741,6 +790,13 @@ inspector.addEventListener('click', async (e) => {
       await saveToLibrary();
       renderInspector();
       break;
+    case 'color':
+      map.boxColor = btn.dataset.color;
+      if (sel && map.selected.kind === 'box') {
+        sel.color = btn.dataset.color;
+        changed();
+      } else renderInspector();
+      break;
     case 'alert':
       sel.alerted = !sel.alerted;
       changed();
@@ -784,3 +840,6 @@ function toast(msg, ms = 2200) {
 }
 
 showMenuTab('name');
+
+// Test hook: open with ?debug to inspect state from the console / automation.
+if (new URLSearchParams(location.search).has('debug')) window.__pr = { map, state };
