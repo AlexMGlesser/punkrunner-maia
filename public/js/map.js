@@ -273,6 +273,7 @@ export class MapView {
           fov: 60,
           range: 6,
           alerted: false,
+          sightOff: false,
           sweep: 0,
           sweepSpeed: 20,
         };
@@ -379,12 +380,22 @@ export class MapView {
     return isEnemy ? enemyPose(unit, t, this.scene.grid.size) : cameraPose(unit, t);
   }
 
+  _unitScale() {
+    const s = this.scene.unitScale;
+    return Number.isFinite(s) && s > 0 ? s : 1;
+  }
+
   _unitRadius() {
-    return Math.max(this.scene.grid.size * 0.3, 5 / this.zoom);
+    return Math.max(this.scene.grid.size * 0.3 * this._unitScale(), 3 / this.zoom);
+  }
+
+  _cameraSize() {
+    const size = this.scene.grid.size * this._unitScale();
+    return { w: Math.max(size * 0.6, 8 / this.zoom), h: Math.max(size * 0.34, 5 / this.zoom) };
   }
 
   _hitTest(w, t) {
-    const r = Math.max(this._unitRadius(), 10 / this.zoom);
+    const r = Math.max(this._unitRadius(), 8 / this.zoom);
     const s = this.scene;
     for (let i = s.cameras.length - 1; i >= 0; i--) {
       const p = cameraPose(s.cameras[i], t);
@@ -499,6 +510,7 @@ export class MapView {
 
   _drawCone(unit, pose, rgb) {
     const { ctx } = this;
+    if (unit.sightOff) return;
     const R = sightRange(unit, this.scene.grid.size);
     if (R <= 0) return;
     const fov = Math.min(360, Math.max(1, unit.fov || 0));
@@ -560,10 +572,9 @@ export class MapView {
 
   _drawCamera(c, pose, now) {
     const { ctx, zoom: z } = this;
-    const size = this.scene.grid.size;
-    const w = Math.max(size * 0.6, 12 / z);
-    const h = Math.max(size * 0.34, 7 / z);
-    const col = c.alerted ? '#ff8a00' : '#ff1f45';
+    const { w, h } = this._cameraSize();
+    const off = !!c.sightOff;
+    const col = off ? '#6b3a45' : c.alerted ? '#ff8a00' : '#ff1f45';
     ctx.save();
     ctx.translate(pose.x, pose.y);
     ctx.rotate(toRad(pose.facing));
@@ -579,14 +590,14 @@ export class MapView {
     ctx.fillStyle = col;
     ctx.fillRect(w / 2 - w * 0.12, -h * 0.28, w * 0.18, h * 0.56);
     // blinking LED
-    if (Math.floor(now * (c.alerted ? 4 : 1.2)) % 2 === 0) {
+    if (!off && Math.floor(now * (c.alerted ? 4 : 1.2)) % 2 === 0) {
       ctx.beginPath();
       ctx.arc(-w * 0.25, 0, h * 0.16, 0, Math.PI * 2);
       ctx.fillStyle = c.alerted ? '#ffb000' : '#ff4d6a';
       ctx.fill();
     }
     ctx.restore();
-    if (c.label) this._text(c.label, pose.x, pose.y + h * 1.6 + 6 / z, '#ff8da0', Math.max(size * 0.25, 11 / z));
+    if (c.label) this._text(c.label, pose.x, pose.y + h * 1.6 + 6 / z, '#ff8da0', Math.max(w * 0.42, 11 / z));
   }
 
   _drawPaths(t) {
@@ -696,10 +707,10 @@ export class MapView {
         ctx.fillStyle = '#ffd400';
         ctx.fill();
       } else {
-        const size = this.scene.grid.size;
+        const { w, h } = this._cameraSize();
         ctx.strokeStyle = '#ff1f45';
         ctx.lineWidth = 2 / z;
-        ctx.strokeRect(p.x - size * 0.3, p.y - size * 0.17, size * 0.6, size * 0.34);
+        ctx.strokeRect(p.x - w / 2, p.y - h / 2, w, h);
       }
       ctx.globalAlpha = 1;
     }

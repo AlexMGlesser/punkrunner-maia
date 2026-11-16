@@ -589,6 +589,7 @@ function renderInspector() {
     <h3>Grid</h3>
     ${slider('grid', 'size', 'Cell size', 8, Math.round(Math.max(s.image.width, s.image.height) / 3), 0.5, 'px')}
     ${slider('grid', 'opacity', 'Opacity', 0, 1, 0.01)}
+    ${slider('scene', 'unitScale', 'Unit size', 0.1, 3, 0.05, 'size of enemies & cameras (1 = default)')}
     <div class="row"><label>Offset</label><div class="pair" style="grid-template-columns:1fr 1fr">
       <input type="number" class="input" data-obj="grid" data-field="x" step="1" title="X offset (px)" />
       <input type="number" class="input" data-obj="grid" data-field="y" step="1" title="Y offset (px)" />
@@ -628,6 +629,7 @@ function renderInspector() {
       <h3>Camera <span class="alert-state ${sel.alerted ? 'on' : 'off'}">${sel.alerted ? 'ALERTED' : 'CALM'}</span></h3>
       <div class="row"><label>Label</label><input class="input" data-obj="unit" data-field="label" maxlength="20" placeholder="optional" /></div>
       <div class="btn-row"><button class="btn small ${sel.alerted ? '' : 'warn'}" data-act="alert">${sel.alerted ? 'Stand down' : 'Alert! (A)'}</button></div>
+      <div class="row"><label>Sight on</label><label class="muted"><input type="checkbox" data-obj="unit" data-field="sightOff" data-invert="1" /> show line of sight</label></div>
       ${slider('unit', 'range', 'Sight', 0, 40, 0.5, 'cells')}
       ${slider('unit', 'fov', 'Cone °', 5, 360, 1, 'degrees')}
       ${slider('unit', 'facing', 'Facing °', -180, 180, 1, 'degrees')}
@@ -678,6 +680,10 @@ function refreshInspectorValues(force = false) {
     const t = targetFor(el.dataset.obj);
     if (!t) continue;
     const v = t[el.dataset.field];
+    if (el.type === 'checkbox') {
+      el.checked = el.dataset.invert ? !v : !!v;
+      continue;
+    }
     el.value = typeof v === 'number' ? Math.round(v * 100) / 100 : (v ?? '');
   }
 }
@@ -691,7 +697,9 @@ inspector.addEventListener('input', (e) => {
   if (!t) return;
   const f = el.dataset.field;
   const isNum = el.type === 'range' || el.type === 'number';
-  if (isNum) {
+  if (el.type === 'checkbox') {
+    t[f] = el.dataset.invert ? !el.checked : el.checked;
+  } else if (isNum) {
     const n = parseFloat(el.value);
     if (!Number.isFinite(n)) return;
     t[f] = f === 'size' ? Math.max(4, n) : n;

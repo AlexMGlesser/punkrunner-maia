@@ -214,6 +214,7 @@ function sanitizeScene(s) {
       size: Math.max(4, num(s.grid?.size, 50)),
       opacity: Math.min(1, Math.max(0, num(s.grid?.opacity, 0.18))),
     },
+    unitScale: Math.min(3, Math.max(0.1, num(s.unitScale, 1))),
     enemies: (Array.isArray(s.enemies) ? s.enemies.slice(0, 500) : []).map((e) => ({
       id: str(e.id),
       label: str(e.label),
@@ -236,6 +237,7 @@ function sanitizeScene(s) {
       fov: num(c.fov, 60),
       range: num(c.range, 6),
       alerted: !!c.alerted,
+      sightOff: !!c.sightOff,
       sweep: Math.max(0, num(c.sweep, 0)),
       sweepSpeed: Math.max(0, num(c.sweepSpeed, 20)),
     })),
