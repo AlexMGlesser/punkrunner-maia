@@ -3,7 +3,17 @@ Netrunner and map app for Maia (I better get some crazy RH after this)
 
 A LAN tactical-map app: the host builds scenes (map image + grid + enemies + cameras with sight cones and patrol paths) and players on the same network watch them live.
 
-## Run (development)
+## Quick start (no install)
+1. **[Download PunkRunner.exe](https://github.com/AlexMGlesser/punkrunner-maia/releases/latest/download/PunkRunner.exe)**
+2. Double-click it. Your browser opens to the app.
+   - SmartScreen warning → **More info** → **Run anyway** (the exe isn't code-signed).
+   - Firewall prompt → allow on **Private networks** so players can connect.
+3. Click **Create**, then give the code and the `Network:` address shown in the black window to your players.
+   Players just open that address in any browser on the same Wi-Fi. They don't need the exe.
+
+Keep the black window open while playing; closing it shuts the session down.
+
+## Run from source (development)
 ```
 npm install
 npm start

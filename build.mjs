@@ -4,8 +4,9 @@ import { build } from 'esbuild';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const root = path.dirname(new URL(import.meta.url).pathname).replace(/^\/([A-Za-z]:)/, '$1');
+const root = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(root, 'dist');
 const exeName = 'PunkRunner.exe';
 
