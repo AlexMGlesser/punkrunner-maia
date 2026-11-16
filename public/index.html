@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PunkRunner</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Share+Tech+Mono&display=swap" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- ================= MENU ================= -->
+  <section id="menu" class="screen">
+    <div class="menu-card">
+      <h1 class="logo" data-text="PUNKRUNNER">PUNKRUNNER</h1>
+      <p class="tagline">// TACTICAL NET INTERFACE v1.0</p>
+
+      <nav class="menu-tabs" role="tablist">
+        <button class="menu-tab active" data-tab="name" role="tab">Name</button>
+        <button class="menu-tab" data-tab="join" role="tab">Join</button>
+        <button class="menu-tab" data-tab="create" role="tab">Create</button>
+      </nav>
+
+      <div class="menu-panel active" data-panel="name">
+        <label class="field-label" for="nameInput">Handle</label>
+        <input id="nameInput" class="input big" maxlength="24" autocomplete="off" spellcheck="false" />
+        <p class="hint">Your callsign on the net. Saved on this device.</p>
+        <p class="hint current-handle">Current: <span id="currentHandle"></span></p>
+      </div>
+
+      <div class="menu-panel" data-panel="join">
+        <label class="field-label" for="joinCode">Session code</label>
+        <input id="joinCode" class="input big code-input" maxlength="5" autocomplete="off" spellcheck="false" placeholder="XXXXX" />
+        <button id="joinBtn" class="btn primary wide">Jack in</button>
+        <p class="hint">Get the code from your host.</p>
+      </div>
+
+      <div class="menu-panel" data-panel="create">
+        <p class="hint">Start a new session. You'll get a code to hand out to your crew.</p>
+        <button id="createBtn" class="btn primary wide">Create session</button>
+        <button id="resumeBtn" class="btn wide hidden"></button>
+      </div>
+
+      <p id="menuError" class="error"></p>
+    </div>
+  </section>
+
+  <!-- ================= APP ================= -->
+  <section id="app" class="screen hidden">
+    <header class="topbar">
+      <div class="brand">PUNK<span>RUNNER</span></div>
+
+      <button id="codeChip" class="chip code-chip" title="Click to copy">
+        <span class="chip-label">CODE</span><span id="sessionCode">-----</span>
+      </button>
+
+      <div class="chip players-chip" tabindex="0">
+        <span class="chip-label">CREW</span><span id="playerCount">0</span>
+        <div class="players-pop"><ul id="playerList"></ul></div>
+      </div>
+
+      <div class="host-only view-ctrl">
+        <span class="chip-label">PLAYER VIEW</span>
+        <select id="viewSelect" class="input"></select>
+      </div>
+
+      <div class="spacer"></div>
+
+      <div class="sim-ctrl">
+        <span id="simClock" class="sim-clock">00:00.0</span>
+        <button id="pauseBtn" class="btn primary">▶ Run</button>
+        <button id="resetBtn" class="btn host-only" title="Reset simulation clock">⟲</button>
+      </div>
+
+      <span id="whoAmI" class="who"></span>
+      <button id="leaveBtn" class="btn ghost">Exit</button>
+    </header>
+
+    <div id="sceneTabs" class="scene-tabs host-only">
+      <div id="sceneTabList" class="scene-tab-list"></div>
+      <button id="importBtn" class="btn small">+ Import image</button>
+      <button id="libraryBtn" class="btn small">Library</button>
+    </div>
+
+    <main class="workspace">
+      <aside id="toolbar" class="toolbar host-only">
+        <button class="tool active" data-tool="select" title="Select / move (V)"><span>⌖</span><small>Select</small></button>
+        <button class="tool" data-tool="enemy" title="Place enemy (E)"><span class="ico-enemy"></span><small>Enemy</small></button>
+        <button class="tool" data-tool="camera" title="Place camera (C)"><span class="ico-camera"></span><small>Camera</small></button>
+        <button class="tool" data-tool="path" title="Draw path for selected enemy (P)"><span>⤳</span><small>Path</small></button>
+        <button class="tool" data-tool="grid" title="Drag to move grid (G)"><span>#</span><small>Grid</small></button>
+        <button class="tool" data-tool="pan" title="Pan (H) — or right-drag anywhere"><span>✥</span><small>Pan</small></button>
+        <div class="tool-sep"></div>
+        <button class="tool" id="fitBtn" title="Fit to screen (F)"><span>⛶</span><small>Fit</small></button>
+      </aside>
+
+      <div id="stage" class="stage">
+        <canvas id="map"></canvas>
+        <div id="emptyHint" class="empty-hint hidden"></div>
+        <div id="waiting" class="waiting hidden">
+          <div class="waiting-inner">
+            <div class="waiting-title glitch" data-text="WAITING ROOM">WAITING ROOM</div>
+            <p class="waiting-sub">Stand by, runner. The host is prepping the run.</p>
+            <ul id="waitingList" class="waiting-list"></ul>
+          </div>
+        </div>
+        <div class="statusbar"><span id="cursorCell">--</span><span id="toolHint"></span></div>
+      </div>
+
+      <aside id="inspector" class="inspector host-only"></aside>
+    </main>
+  </section>
+
+  <!-- ================= LIBRARY MODAL ================= -->
+  <div id="libraryModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2>Scene Library</h2>
+        <button class="btn ghost" data-close>✕</button>
+      </div>
+      <div id="libraryList" class="library-list"></div>
+    </div>
+  </div>
+
+  <input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden />
+  <div id="toast" class="toast"></div>
+
+  <script src="vendor/socket.io.min.js"></script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
